@@ -62,16 +62,18 @@
     <!-- 结果展示区域 -->
     <div class="result-section" v-if="analysisResults.length > 0">
       <h2>分析结果</h2>
-      <!-- 使用 ElTableV2 -->
-      <el-table-v2
-        :columns="tableColumns"
-        :data="analysisResults"
-        :width="tableWidth"
-        :height="500"
-        fixed-data
-        border
-        style="width: 100%;"
-      />
+      <el-table :data="analysisResults" border style="width: 100%;" height="500">
+        <el-table-column fixed v-for="prop in identifierProperties" :key="prop" :prop="prop" :label="'标识(' + prop + ')'"></el-table-column>
+        <el-table-column v-for="prop in selectedProperties" :key="prop" :prop="prop" :label="prop"></el-table-column>
+        <el-table-column prop="checkPropertyValue" :label="checkProperty + '(校验值)'"></el-table-column>
+        <el-table-column prop="sumValue" label="选中属性总和"></el-table-column>
+        <el-table-column prop="isValid" label="校验结果" width="120">
+          <template #default="scope">
+            <!-- 修正后的Vue模板语法 -->
+            <el-tag :type="scope.row.isValid ? 'success' : 'danger'">{{ scope.row.isValid ? '通过' : '不通过' }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
 
       <div class="summary" v-if="summary">
         <el-alert :title="summary.title" :description="summary.message" :type="summary.type" show-icon></el-alert>
@@ -81,8 +83,8 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue' // 导入 computed
-import { ElMessage, ElTableV2 } from 'element-plus' // 导入 ElTableV2
+import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 // 数据状态
 const jsonInput = ref('')
@@ -94,103 +96,11 @@ const selectedProperties = ref([])
 const checkProperty = ref('')
 const analysisResults = ref([])
 const summary = ref(null)
-const isAnalyzing = ref(false)
-
-// 计算表格宽度，保证其响应式
-const tableWidth = ref(0);
-// 监听窗口大小变化
-const updateTableWidth = () => {
-  const resultSection = document.querySelector('.result-section');
-  if (resultSection) {
-    tableWidth.value = resultSection.offsetWidth;
-  } else {
-    tableWidth.value = 1000; // 默认宽度
-  }
-};
-// 在组件挂载时设置初始宽度
-import { onMounted, onUnmounted } from 'vue';
-onMounted(() => {
-  updateTableWidth();
-  window.addEventListener('resize', updateTableWidth);
-});
-onUnmounted(() => {
-  window.removeEventListener('resize', updateTableWidth);
-});
-
-
-// 定义表格列的计算属性
-const tableColumns = computed(() => {
-  const columns = [];
-  const defaultColWidth = 120; // 默认列宽
-
-  // 1. 添加标识属性列 (fixed)
-  identifierProperties.value.forEach((prop, index) => {
-    columns.push({
-      key: prop,
-      dataKey: prop,
-      title: `标识(${prop})`,
-      width: defaultColWidth,
-      align: 'center',
-      // 第一个标识列固定在左侧
-      fixed: index === 0 ? 'left' : undefined,
-    });
-  });
-
-  // 2. 添加选中的数值属性列
-  selectedProperties.value.forEach(prop => {
-    columns.push({
-      key: prop,
-      dataKey: prop,
-      title: prop,
-      width: defaultColWidth,
-      align: 'center',
-    });
-  });
-
-  // 3. 添加校验属性值列
-  if (checkProperty.value) {
-    columns.push({
-      key: 'checkPropertyValue',
-      dataKey: 'checkPropertyValue',
-      title: `${checkProperty.value}(校验值)`,
-      width: 150,
-      align: 'center',
-    });
-  }
-
-
-  // 4. 添加选中属性总和列
-  columns.push({
-    key: 'sumValue',
-    dataKey: 'sumValue',
-    title: '选中属性总和',
-    width: 150,
-    align: 'center',
-  });
-
-  // 5. 添加校验结果列 (fixed)
-  columns.push({
-    key: 'isValid',
-    dataKey: 'isValid',
-    title: '校验结果',
-    width: 120,
-    align: 'center',
-    fixed: 'right', // 固定在右侧
-    cellRenderer: ({ rowData }) => { // 自定义单元格渲染
-      const type = rowData.isValid ? 'success' : 'danger';
-      const text = rowData.isValid ? '通过' : '不通过';
-      return (
-        <el-tag type={type}>{text}</el-tag>
-      );
-    },
-  });
-
-  return columns;
-});
+const isAnalyzing = ref(false) // 添加分析状态
 
 // 解析JSON输入
 const parseJson = () => {
-  if (isAnalyzing.value) {
+  if (isAnalyzing.value) { // 防止在分析过程中修改输入
     ElMessage.warning('请先停止当前分析过程。')
     return;
   }
@@ -206,20 +116,24 @@ const parseJson = () => {
       return
     }
 
+    // 验证是否为对象数组
     if (!data.every(item => typeof item === 'object' && item !== null)) {
       ElMessage.error('数组中必须包含对象')
       return
     }
 
     parsedData.value = data
+    // 提取所有属性和数值属性
     const firstItem = data[0]
     allProperties.value = firstItem ? Object.keys(firstItem) : []
     numericProperties.value = getNumericProperties(firstItem)
 
+    // 重置选择（保留用户之前选择，除非是新的数据结构）
+    // 为了避免在解析新数据时，之前的选择导致错误，这里还是建议清空
     identifierProperties.value = []
     selectedProperties.value = []
     checkProperty.value = ''
-    analysisResults.value = []
+    analysisResults.value = [] // 清空结果，因为数据源可能变了
     summary.value = null
 
     ElMessage.success(`数组解析成功，共发现 ${allProperties.value.length} 个属性，其中 ${numericProperties.value.length} 个数值属性`)
@@ -233,6 +147,7 @@ const getNumericProperties = (obj) => {
   return obj ? Object.keys(obj).filter(key => typeof obj[key] === 'number') : []
 }
 
+// 用于模拟可取消的异步操作 (可选但推荐)
 let analysisTimeout = null;
 
 // 分析数据并进行校验
@@ -257,25 +172,29 @@ const analyzeData = async () => {
     return
   }
 
-  if (isAnalyzing.value) {
+  if (isAnalyzing.value) { // 防止重复点击
     return;
   }
 
   try {
-    isAnalyzing.value = true
+    isAnalyzing.value = true // 开始分析
     ElMessage.info('分析已开始，请稍候...')
 
+    // 清空旧结果，准备新分析
     analysisResults.value = []
     summary.value = null
 
+    // 使用setTimeout模拟异步分析过程，并支持取消
     await new Promise((resolve, reject) => {
       analysisTimeout = setTimeout(() => {
-        if (!isAnalyzing.value) {
+        // 如果在定时器触发前被停止，则不会执行后续逻辑
+        if (!isAnalyzing.value) { // 检查isAnalyzing是否已被外部停止
           return reject(new Error('分析已被停止'));
         }
 
-        analysisResults.value = parsedData.value.map((item, index) => {
-          const result = { id: index }; // ElTableV2 建议每行有唯一的key，这里使用index
+        // 处理分析结果
+        analysisResults.value = parsedData.value.map((item) => {
+          const result = {}
           // 添加所有选中的标识属性值
           identifierProperties.value.forEach(prop => {
             result[prop] = item[prop]
@@ -287,7 +206,7 @@ const analyzeData = async () => {
           })
 
           // 计算选中属性的总和
-          const sum = selectedProperties.value.reduce((acc, prop) => acc + (typeof item[prop] === 'number' ? item[prop] : 0), 0)
+          const sum = selectedProperties.value.reduce((acc, prop) => acc + (typeof item[prop] === 'number' ? item[prop] : 0), 0) // 增加类型检查，防止非数字参与计算
           result.sumValue = sum
 
           // 添加校验属性值和结果
@@ -297,6 +216,7 @@ const analyzeData = async () => {
           return result
         })
 
+        // 生成汇总信息
         const total = analysisResults.value.length
         const validCount = analysisResults.value.filter(item => item.isValid).length
         summary.value = {
@@ -304,18 +224,18 @@ const analyzeData = async () => {
           message: validCount === total ? '所有数据均通过校验' : `${total - validCount} 条数据未通过校验`,
           type: validCount === total ? 'success' : 'warning'
         }
-        resolve();
-      }, 1500)
+        resolve(); // 完成异步操作
+      }, 1500) // 模拟分析耗时1.5秒
     })
   } catch (error) {
-    if (error.message !== '分析已被停止') {
+    if (error.message !== '分析已被停止') { // 忽略手动停止的错误
       ElMessage.error('分析过程出错: ' + error.message)
     } else {
       ElMessage.warning('分析已停止。')
     }
   } finally {
-    isAnalyzing.value = false
-    clearTimeout(analysisTimeout);
+    isAnalyzing.value = false // 分析结束
+    clearTimeout(analysisTimeout); // 清除定时器
     analysisTimeout = null;
   }
 }
@@ -323,12 +243,12 @@ const analyzeData = async () => {
 // 停止分析并清空结果
 const stopAnalysis = () => {
   if (analysisTimeout) {
-    clearTimeout(analysisTimeout);
+    clearTimeout(analysisTimeout); // 立即停止模拟的异步操作
     analysisTimeout = null;
   }
-  isAnalyzing.value = false;
-  analysisResults.value = [];
-  summary.value = null;
+  isAnalyzing.value = false; // 停止分析状态
+  analysisResults.value = []; // 清空结果
+  summary.value = null; // 清空汇总信息
   ElMessage.info('分析已停止，结果已清空。您可以重新选择属性或解析新数据。');
 }
 </script>
@@ -364,7 +284,7 @@ const stopAnalysis = () => {
 
 .action-buttons {
   display: flex;
-  gap: 15px;
+  gap: 15px; /* 按钮之间的间距 */
   margin-top: 20px;
 }
 </style>
