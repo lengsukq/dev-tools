@@ -18,22 +18,60 @@
 
     <!-- 属性选择区域 -->
     <div class="selection-section" v-if="allProperties.length > 0">
-      <el-form-item label="选择标识属性(用于区分数据，多选)">
-        <el-checkbox-group v-model="identifierProperties" :disabled="isAnalyzing">
-          <el-checkbox v-for="prop in allProperties" :key="prop" :label="prop"></el-checkbox>
-        </el-checkbox-group>
+      <!-- 标识属性选择 - 改为el-select多选并支持模糊搜索 -->
+      <el-form-item label="选择标识属性(用于区分数据，多选，支持搜索)">
+        <el-select
+          v-model="identifierProperties"
+          multiple
+          filterable
+          placeholder="请选择标识属性"
+          style="width: 100%"
+          :disabled="isAnalyzing"
+        >
+          <el-option
+            v-for="prop in allProperties"
+            :key="prop"
+            :label="prop"
+            :value="prop"
+          ></el-option>
+        </el-select>
       </el-form-item>
 
-      <el-form-item label="选择要展示的数值属性(多选)">
-        <el-checkbox-group v-model="selectedProperties" :disabled="isAnalyzing">
-          <el-checkbox v-for="prop in numericProperties" :key="prop" :label="prop"></el-checkbox>
-        </el-checkbox-group>
+      <!-- 要展示的属性选择 - 改为el-select多选并支持模糊搜索 -->
+      <el-form-item label="选择要展示的属性(多选，支持搜索)">
+        <el-select
+          v-model="selectedProperties"
+          multiple
+          filterable
+          placeholder="请选择要展示的属性"
+          style="width: 100%"
+          :disabled="isAnalyzing"
+        >
+          <el-option
+            v-for="prop in allProperties"
+            :key="prop"
+            :label="prop"
+            :value="prop"
+          ></el-option>
+        </el-select>
       </el-form-item>
 
-      <el-form-item label="选择校验属性(单选)">
-        <el-radio-group v-model="checkProperty" :disabled="isAnalyzing">
-          <el-radio v-for="prop in numericProperties" :key="prop" :label="prop"></el-radio>
-        </el-radio-group>
+      <!-- 校验属性选择 - 改为el-select单选并支持模糊搜索 -->
+      <el-form-item label="选择校验属性(单选，必须为数值类型，支持搜索)">
+        <el-select
+          v-model="checkProperty"
+          filterable
+          placeholder="请选择校验属性"
+          style="width: 100%"
+          :disabled="isAnalyzing"
+        >
+          <el-option
+            v-for="prop in numericProperties"
+            :key="prop"
+            :label="prop"
+            :value="prop"
+          ></el-option>
+        </el-select>
       </el-form-item>
 
       <div class="action-buttons">
@@ -63,13 +101,16 @@
     <div class="result-section" v-if="analysisResults.length > 0">
       <h2>分析结果</h2>
       <el-table :data="analysisResults" border style="width: 100%;" height="500">
+        <!-- 标识属性 -->
         <el-table-column fixed v-for="prop in identifierProperties" :key="prop" :prop="prop" :label="'标识(' + prop + ')'"></el-table-column>
+        <!-- 展示属性（现在支持所有类型） -->
         <el-table-column v-for="prop in selectedProperties" :key="prop" :prop="prop" :label="prop"></el-table-column>
+        <!-- 校验属性值 -->
         <el-table-column prop="checkPropertyValue" :label="checkProperty + '(校验值)'"></el-table-column>
-        <el-table-column prop="sumValue" label="选中属性总和"></el-table-column>
+        <!-- 选中数值属性总和 -->
+        <el-table-column prop="sumNumericValue" label="选中数值属性总和"></el-table-column>
         <el-table-column prop="isValid" label="校验结果" width="120">
           <template #default="scope">
-            <!-- 修正后的Vue模板语法 -->
             <el-tag :type="scope.row.isValid ? 'success' : 'danger'">{{ scope.row.isValid ? '通过' : '不通过' }}</el-tag>
           </template>
         </el-table-column>
@@ -89,11 +130,11 @@ import { ElMessage } from 'element-plus'
 // 数据状态
 const jsonInput = ref('')
 const parsedData = ref([])
-const allProperties = ref([])
-const identifierProperties = ref([])
-const numericProperties = ref([])
-const selectedProperties = ref([])
-const checkProperty = ref('')
+const allProperties = ref([]) // 所有属性
+const identifierProperties = ref([]) // 标识属性，从 allProperties 中选择
+const numericProperties = ref([]) // 纯数值属性，用于校验属性的选择
+const selectedProperties = ref([]) // 要展示的属性，从 allProperties 中选择
+const checkProperty = ref('') // 校验属性，从 numericProperties 中选择
 const analysisResults = ref([])
 const summary = ref(null)
 const isAnalyzing = ref(false) // 添加分析状态
@@ -126,10 +167,9 @@ const parseJson = () => {
     // 提取所有属性和数值属性
     const firstItem = data[0]
     allProperties.value = firstItem ? Object.keys(firstItem) : []
-    numericProperties.value = getNumericProperties(firstItem)
+    numericProperties.value = getNumericProperties(firstItem) // 仅用于校验属性的筛选
 
-    // 重置选择（保留用户之前选择，除非是新的数据结构）
-    // 为了避免在解析新数据时，之前的选择导致错误，这里还是建议清空
+    // 重置选择
     identifierProperties.value = []
     selectedProperties.value = []
     checkProperty.value = ''
@@ -147,7 +187,7 @@ const getNumericProperties = (obj) => {
   return obj ? Object.keys(obj).filter(key => typeof obj[key] === 'number') : []
 }
 
-// 用于模拟可取消的异步操作 (可选但推荐)
+// 用于模拟可取消的异步操作
 let analysisTimeout = null;
 
 // 分析数据并进行校验
@@ -163,12 +203,18 @@ const analyzeData = async () => {
   }
 
   if (!selectedProperties.value.length) {
-    ElMessage.warning('请至少选择一个要展示的数值属性')
+    ElMessage.warning('请至少选择一个要展示的属性')
     return
   }
 
   if (!checkProperty.value) {
     ElMessage.warning('请选择一个校验属性')
+    return
+  }
+
+  // 再次校验 checkProperty 必须是数值类型
+  if (!numericProperties.value.includes(checkProperty.value)) {
+    ElMessage.error(`校验属性 "${checkProperty.value}" 不是数值类型，请重新选择。`)
     return
   }
 
@@ -200,18 +246,27 @@ const analyzeData = async () => {
             result[prop] = item[prop]
           })
 
-          // 添加选中的属性值
+          // 添加所有选中的展示属性值 (可以是任意类型)
           selectedProperties.value.forEach(prop => {
             result[prop] = item[prop]
           })
 
-          // 计算选中属性的总和
-          const sum = selectedProperties.value.reduce((acc, prop) => acc + (typeof item[prop] === 'number' ? item[prop] : 0), 0) // 增加类型检查，防止非数字参与计算
-          result.sumValue = sum
+          // 计算选中属性中 "数值类型" 的总和
+          const sum = selectedProperties.value.reduce((acc, prop) => {
+            // 只有当属性是数值类型时才参与求和
+            if (typeof item[prop] === 'number') {
+              return acc + item[prop]
+            }
+            return acc
+          }, 0)
+          result.sumNumericValue = sum // 修改为 sumNumericValue，更明确
 
           // 添加校验属性值和结果
-          result.checkPropertyValue = item[checkProperty.value]
-          result.isValid = sum === item[checkProperty.value]
+          const checkValue = item[checkProperty.value];
+          // 确保校验值本身也是数字，防止意外情况
+          result.checkPropertyValue = typeof checkValue === 'number' ? checkValue : null;
+
+          result.isValid = sum === result.checkPropertyValue // 校验逻辑
 
           return result
         })
